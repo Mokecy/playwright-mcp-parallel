@@ -1,16 +1,19 @@
 {
-  "name": "playwright-mcp-internal",
+  "name": "playwright-mcp-parallel",
   "version": "0.0.68",
-  "private": true,
+  "description": "Playwright MCP with parallel multi-instance browser support",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/microsoft/playwright-mcp.git"
+    "url": "git+https://github.com/Mokecy/playwright-mcp-parallel.git"
   },
-  "homepage": "https://playwright.dev",
+  "homepage": "https://github.com/Mokecy/playwright-mcp-parallel",
   "author": {
-    "name": "Microsoft Corporation"
+    "name": "Mokecy"
   },
   "license": "Apache-2.0",
+  "bin": {
+    "playwright-mcp-parallel": "cli.js"
+  },
   "scripts": {
     "docker-build": "docker build --no-cache -t playwright-mcp-dev:latest .",
     "docker-rm": "docker rm playwright-mcp-dev",
@@ -24,6 +27,10 @@
   "workspaces": [
     "packages/*"
   ],
+  "dependencies": {
+    "playwright": "1.59.0-alpha-1773608981000",
+    "playwright-core": "1.59.0-alpha-1773608981000"
+  },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@playwright/test": "1.59.0-alpha-1773608981000",
