@@ -7,3 +7,4 @@ playwright-report/
 .env
 sessions/
 dist/
+release.bat

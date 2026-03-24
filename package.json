@@ -30,6 +30,8 @@
   },
   "scripts": {
     "build": "echo OK",
-    "start": "node cli.js"
+    "start": "node cli.js",
+    "release:patch": "npm version patch && npm publish --//registry.npmjs.org/:_authToken=%NPM_TOKEN% && git push && git push --tags",
+    "release:minor": "npm version minor && npm publish --//registry.npmjs.org/:_authToken=%NPM_TOKEN% && git push && git push --tags"
   }
 }
