@@ -37,6 +37,7 @@
     "playwright-core": "1.59.0-alpha-1773608981000"
   },
   "bin": {
-    "playwright-mcp": "cli.js"
+    "playwright-mcp": "cli.js",
+    "playwright-mcp-parallel": "cli-parallel.js"
   }
 }

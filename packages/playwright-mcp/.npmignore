@@ -2,5 +2,7 @@
 !README.md
 !LICENSE
 !cli.js
+!cli-parallel.js
+!parallel.js
 !index.*
 !config.d.ts
