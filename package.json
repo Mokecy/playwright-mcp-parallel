@@ -1,7 +1,7 @@
 {
   "name": "playwright-mcp-parallel",
   "version": "0.0.68",
-  "description": "Playwright MCP with parallel multi-instance browser support",
+  "description": "Playwright MCP with parallel multi-instance browser support. Drop-in enhancement over @playwright/mcp.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Mokecy/playwright-mcp-parallel.git"
@@ -11,29 +11,25 @@
     "name": "Mokecy"
   },
   "license": "Apache-2.0",
+  "keywords": ["playwright", "mcp", "parallel", "browser", "automation", "multi-instance"],
   "bin": {
     "playwright-mcp-parallel": "cli.js"
   },
-  "scripts": {
-    "docker-build": "docker build --no-cache -t playwright-mcp-dev:latest .",
-    "docker-rm": "docker rm playwright-mcp-dev",
-    "docker-run": "docker run -it -p 8080:8080 --name playwright-mcp-dev playwright-mcp-dev:latest",
-    "lint": "npm run lint --workspaces",
-    "test": "npm run test --workspaces",
-    "build": "npm run build --workspaces",
-    "bump": "npm version --workspaces --no-git-tag-version",
-    "roll": "node roll.js"
-  },
-  "workspaces": [
-    "packages/*"
+  "files": [
+    "cli.js",
+    "parallel.js",
+    "README.md",
+    "LICENSE"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "playwright": "1.59.0-alpha-1773608981000",
     "playwright-core": "1.59.0-alpha-1773608981000"
   },
-  "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.2",
-    "@playwright/test": "1.59.0-alpha-1773608981000",
-    "@types/node": "^24.3.0"
+  "scripts": {
+    "build": "echo OK",
+    "start": "node cli.js"
   }
 }
