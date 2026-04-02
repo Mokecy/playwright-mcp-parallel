@@ -91,6 +91,16 @@ function createParallelConnection(config) {
         description: 'Close all browser instances and release resources.',
         inputSchema: { type: 'object', properties: {} },
       },
+      {
+        name: 'instance_export_auth',
+        description: 'Export auth state (cookies/localStorage) from a specific instance or the connected Chrome. Useful for saving login state to reuse later.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            instanceId: { type: 'string', description: 'Instance ID to export auth from. If not provided, exports the auth state from browser_connect.' },
+          },
+        },
+      },
     ];
 
     // Original tools with instanceId injected
@@ -127,6 +137,7 @@ function createParallelConnection(config) {
       if (name === 'instance_list') return await handleInstanceList();
       if (name === 'instance_close') return await handleInstanceClose(args);
       if (name === 'instance_close_all') return await handleInstanceCloseAll();
+      if (name === 'instance_export_auth') return await handleInstanceExportAuth(args);
 
       // ── Parallel tool dispatch ──
       if (name.startsWith('page_')) {
@@ -285,6 +296,75 @@ function createParallelConnection(config) {
       await handleInstanceClose({ instanceId: id });
     }
     return textResult(`Closed ${count} instance(s).`);
+  }
+
+  async function handleInstanceExportAuth(args) {
+    const instanceId = args?.instanceId;
+
+    // Export from a specific instance
+    if (instanceId) {
+      const entry = instances.get(instanceId);
+      if (!entry) return errorResult(`Instance "${instanceId}" not found.`);
+
+      try {
+        const cookies = await entry.browserContext.cookies();
+        const pages = entry.browserContext.pages();
+        const localStorageData = {};
+
+        for (const page of pages) {
+          try {
+            const origin = new URL(page.url()).origin;
+            if (origin === 'null' || !origin) continue;
+            const storage = await page.evaluate(() => {
+              const items = {};
+              for (let i = 0; i < window.localStorage.length; i++) {
+                const key = window.localStorage.key(i);
+                if (key) items[key] = window.localStorage.getItem(key) || '';
+              }
+              return items;
+            });
+            if (Object.keys(storage).length > 0) localStorageData[origin] = storage;
+          } catch (e) { /* ignore */ }
+        }
+
+        const exportedAuth = {
+          cookies: cookies.map(c => ({
+            name: c.name, value: c.value, domain: c.domain,
+            path: c.path, expires: c.expires, httpOnly: c.httpOnly,
+            secure: c.secure, sameSite: c.sameSite,
+          })),
+          origins: Object.entries(localStorageData).map(([origin, items]) => ({
+            origin,
+            localStorage: Object.entries(items).map(([name, value]) => ({ name, value })),
+          })),
+        };
+
+        // Also update the global authState so new instances can inherit it
+        authState = exportedAuth;
+
+        return textResult(
+          `Auth exported from instance "${instanceId}".\n` +
+          `Cookies: ${exportedAuth.cookies.length}\n` +
+          `localStorage origins: ${exportedAuth.origins.length}\n\n` +
+          `Auth state updated globally — new instances will inherit this auth.\n\n` +
+          `\`\`\`json\n${JSON.stringify(exportedAuth, null, 2)}\n\`\`\``
+        );
+      } catch (error) {
+        return errorResult(`Failed to export auth from instance "${instanceId}": ${error.message}`);
+      }
+    }
+
+    // Export from browser_connect auth state
+    if (!authState) {
+      return errorResult('No auth state available. Run browser_connect first, or provide an instanceId.');
+    }
+
+    return textResult(
+      `Auth state from browser_connect:\n` +
+      `Cookies: ${authState.cookies.length}\n` +
+      `localStorage origins: ${authState.origins.length}\n\n` +
+      `\`\`\`json\n${JSON.stringify(authState, null, 2)}\n\`\`\``
+    );
   }
 
   // ── Cleanup ──
