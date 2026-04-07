@@ -32,8 +32,8 @@
     "node": ">=18"
   },
   "dependencies": {
-    "playwright": "1.59.0-alpha-1773608981000",
-    "playwright-core": "1.59.0-alpha-1773608981000"
+    "playwright": "^1.59.1",
+    "playwright-core": "^1.59.1"
   },
   "scripts": {
     "build": "echo OK",
