@@ -9,7 +9,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
 
     steps:
@@ -22,8 +22,20 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Upgrade playwright & playwright-core to latest
+        run: |
+          LATEST=$(npm view playwright-core dist-tags.latest)
+          echo "Latest playwright-core: $LATEST"
+          npm install playwright@$LATEST playwright-core@$LATEST --save
+          echo "PLAYWRIGHT_VERSION=$LATEST" >> $GITHUB_ENV
+
+      - name: Commit upgraded playwright version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git diff --staged --quiet || git commit -m "chore: upgrade playwright-core to ${{ env.PLAYWRIGHT_VERSION }}"
+          git push
 
       - name: Publish to npm
         run: npm publish --access public
