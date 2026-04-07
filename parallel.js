@@ -228,14 +228,24 @@ function createParallelConnection(config) {
 
     // Launch a new isolated browser
     const browserName = config.browser?.browserName || 'chromium';
+    const isHeadless = config.browser?.launchOptions?.headless ?? false;
+    const extraArgs = isHeadless ? [] : ['--start-maximized'];
     const browser = await playwright[browserName].launch({
       ...(config.browser?.launchOptions || {}),
-      headless: config.browser?.launchOptions?.headless ?? false,
+      headless: isHeadless,
+      args: [
+        ...((config.browser?.launchOptions?.args) || []),
+        ...extraArgs,
+      ],
       handleSIGINT: false,
       handleSIGTERM: false,
     });
 
-    const browserContext = await browser.newContext(contextOptions);
+    // viewport: null is required for --start-maximized to take effect
+    const browserContext = await browser.newContext({
+      ...contextOptions,
+      viewport: isHeadless ? (contextOptions.viewport ?? { width: 1920, height: 1080 }) : null,
+    });
     const backend = new BrowserBackend(config, browserContext, tools);
     await backend.initialize(clientInfo);
 
