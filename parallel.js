@@ -48,7 +48,17 @@ function createParallelConnection(config) {
     const managementTools = [
       {
         name: 'browser_connect',
-        description: 'Connect to an existing Chrome browser via CDP and extract auth cookies/localStorage. Chrome must be running with --remote-debugging-port. This extracts auth so new instances inherit login state.',
+        description: [
+          'Connect to an existing Chrome browser via CDP and extract auth cookies/localStorage.',
+          'Chrome must be running with --remote-debugging-port.',
+          '',
+          '⚠️ IMPORTANT RULES — READ BEFORE USING:',
+          '1. ALWAYS call browser_connect FIRST before doing anything. Try common ports: 9222, 9223, 9224.',
+          '2. If connection SUCCEEDS → proceed immediately, do NOT restart Chrome.',
+          '3. If connection FAILS with "ECONNREFUSED" → Chrome debug port is NOT open. Ask the user to start Chrome with the debug port; do NOT kill or restart any Chrome process.',
+          '4. NEVER kill Chrome, NEVER run pkill/killall/taskkill on Chrome unless the user explicitly asks.',
+          '5. If the result says "already connected" → skip and proceed, no action needed.',
+        ].join('\n'),
         inputSchema: {
           type: 'object',
           properties: {
@@ -164,52 +174,104 @@ function createParallelConnection(config) {
   // ── Management tool implementations ──
 
   async function handleBrowserConnect(args) {
-    const cdpUrl = args?.cdpUrl || 'http://localhost:9222';
     const pageIndex = args?.pageIndex || 0;
 
-    try {
-      connectedBrowser = await playwright.chromium.connectOverCDP(cdpUrl);
-      const contexts = connectedBrowser.contexts();
-      if (contexts.length === 0) throw new Error('No browser contexts found');
+    // If a specific URL is given, use it directly; otherwise auto-probe common ports
+    const explicitUrl = args?.cdpUrl;
+    const urlsToTry = explicitUrl
+      ? [explicitUrl]
+      : ['http://localhost:9222', 'http://localhost:9223', 'http://localhost:9224'];
 
-      const context = contexts[0];
-      const pages = context.pages();
-      if (pages.length === 0) throw new Error('No pages found');
-
-      const targetPage = pages[Math.min(pageIndex, pages.length - 1)];
-      const cookies = await context.cookies();
-
-      // Extract localStorage
-      const localStorageData = {};
+    // If already connected and still alive, skip reconnect
+    if (connectedBrowser) {
       try {
-        const origin = new URL(targetPage.url()).origin;
-        const storage = await targetPage.evaluate(() => {
-          const items = {};
-          for (let i = 0; i < window.localStorage.length; i++) {
-            const key = window.localStorage.key(i);
-            if (key) items[key] = window.localStorage.getItem(key) || '';
-          }
-          return items;
-        });
-        localStorageData[origin] = storage;
-      } catch (e) { /* ignore */ }
-
-      authState = {
-        cookies: cookies.map(c => ({
-          name: c.name, value: c.value, domain: c.domain,
-          path: c.path, expires: c.expires, httpOnly: c.httpOnly,
-          secure: c.secure, sameSite: c.sameSite,
-        })),
-        origins: Object.entries(localStorageData).map(([origin, items]) => ({
-          origin,
-          localStorage: Object.entries(items).map(([name, value]) => ({ name, value })),
-        })),
-      };
-
-      return textResult(`Connected to Chrome at ${cdpUrl}.\nExtracted ${cookies.length} cookies.\nNew instances will inherit auth state.`);
-    } catch (error) {
-      return errorResult(`Failed to connect: ${error.message}`);
+        connectedBrowser.contexts(); // liveness check
+        const alreadyConnectedUrl = connectedBrowser._connection?._url || '(previous session)';
+        return textResult(
+          `✅ Already connected to Chrome at ${alreadyConnectedUrl}.\n` +
+          `Auth state is intact (${authState?.cookies?.length ?? 0} cookies).\n` +
+          `No action needed — proceed with your task.`
+        );
+      } catch (_) {
+        connectedBrowser = null; // Browser gone, reset and try fresh
+      }
     }
+
+    // Try each candidate URL
+    let lastError = null;
+    for (const cdpUrl of urlsToTry) {
+      try {
+        const browser = await playwright.chromium.connectOverCDP(cdpUrl, { timeout: 3000 });
+        const contexts = browser.contexts();
+        if (contexts.length === 0) { await browser.close().catch(() => {}); continue; }
+
+        const context = contexts[0];
+        const pages = context.pages();
+        if (pages.length === 0) { await browser.close().catch(() => {}); continue; }
+
+        connectedBrowser = browser;
+        const targetPage = pages[Math.min(pageIndex, pages.length - 1)];
+        const cookies = await context.cookies();
+
+        // Extract localStorage
+        const localStorageData = {};
+        try {
+          const origin = new URL(targetPage.url()).origin;
+          const storage = await targetPage.evaluate(() => {
+            const items = {};
+            for (let i = 0; i < window.localStorage.length; i++) {
+              const key = window.localStorage.key(i);
+              if (key) items[key] = window.localStorage.getItem(key) || '';
+            }
+            return items;
+          });
+          localStorageData[origin] = storage;
+        } catch (e) { /* ignore */ }
+
+        authState = {
+          cookies: cookies.map(c => ({
+            name: c.name, value: c.value, domain: c.domain,
+            path: c.path, expires: c.expires, httpOnly: c.httpOnly,
+            secure: c.secure, sameSite: c.sameSite,
+          })),
+          origins: Object.entries(localStorageData).map(([origin, items]) => ({
+            origin,
+            localStorage: Object.entries(items).map(([name, value]) => ({ name, value })),
+          })),
+        };
+
+        return textResult(
+          `✅ Connected to Chrome at ${cdpUrl}.\n` +
+          `Extracted ${cookies.length} cookies.\n` +
+          `New instances will inherit auth state.\n` +
+          `⚠️ Do NOT kill or restart Chrome — it is already running correctly.`
+        );
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    // All attempts failed — give clear, actionable guidance to the AI
+    const isConnRefused = lastError?.message?.includes('ECONNREFUSED') || lastError?.message?.includes('connect');
+    const portList = urlsToTry.join(', ');
+
+    if (isConnRefused) {
+      return errorResult(
+        `❌ Chrome debug port not found (tried: ${portList}).\n\n` +
+        `Chrome is running WITHOUT --remote-debugging-port.\n\n` +
+        `ACTION REQUIRED — Ask the user to run this command to restart Chrome with debug port:\n` +
+        `  Mac:     /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222\n` +
+        `  Windows: start chrome.exe --remote-debugging-port=9222\n\n` +
+        `⚠️ IMPORTANT: Do NOT kill or pkill Chrome automatically.\n` +
+        `⚠️ Do NOT proceed until the user confirms Chrome has been restarted with the debug port.`
+      );
+    }
+
+    return errorResult(
+      `❌ Failed to connect to Chrome (tried: ${portList}).\n` +
+      `Error: ${lastError?.message}\n\n` +
+      `⚠️ Do NOT kill Chrome. Ask the user to check if Chrome is running and which debug port is in use.`
+    );
   }
 
   async function handleInstanceCreate(args) {
