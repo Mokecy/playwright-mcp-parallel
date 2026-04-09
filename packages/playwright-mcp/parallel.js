@@ -378,6 +378,53 @@ function createParallelConnection(config) {
     }
   });
 
+  // ── Instance badge: visually mark browser windows with instanceId ──
+
+  /**
+   * Inject a persistent visual badge showing the instanceId into every page.
+   * Also sets up a listener so future navigations re-inject the badge.
+   */
+  async function markBrowserWithInstanceId(browserContext, instanceId) {
+    const badgeScript = (id) => `
+      (function() {
+        if (document.getElementById('__mcp_instance_badge__')) return;
+        const badge = document.createElement('div');
+        badge.id = '__mcp_instance_badge__';
+        badge.textContent = '🤖 ' + ${JSON.stringify(id)};
+        badge.style.cssText = 'position:fixed;top:4px;right:4px;z-index:2147483647;' +
+          'background:linear-gradient(135deg,#1a1a2e,#16213e);color:#00d4ff;' +
+          'font:bold 12px/1 "Consolas","Monaco","Courier New",monospace;' +
+          'padding:5px 10px;border-radius:6px;border:1px solid #00d4ff40;' +
+          'box-shadow:0 2px 8px rgba(0,212,255,0.2);pointer-events:none;' +
+          'opacity:0.85;user-select:none;white-space:nowrap;';
+        (document.body || document.documentElement).appendChild(badge);
+      })();
+    `;
+
+    // Inject into all existing pages
+    const pages = browserContext.pages();
+    for (const page of pages) {
+      try { await page.evaluate(badgeScript(instanceId)); } catch { /* ignore */ }
+    }
+
+    // Auto-inject on every future page and navigation
+    browserContext.on('page', async (page) => {
+      try {
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await page.evaluate(badgeScript(instanceId));
+      } catch { /* ignore */ }
+    });
+
+    // Re-inject after navigation on existing and new pages
+    const injectOnNav = (page) => {
+      page.on('load', async () => {
+        try { await page.evaluate(badgeScript(instanceId)); } catch { /* ignore */ }
+      });
+    };
+    for (const page of pages) { injectOnNav(page); }
+    browserContext.on('page', injectOnNav);
+  }
+
   // ── Management tool implementations ──
 
   /**
@@ -716,6 +763,10 @@ function createParallelConnection(config) {
     if (url) {
       await backend.callTool('browser_navigate', { url });
     }
+
+    // ── Mark browser with instanceId ──
+    // Inject a visual badge into every new page so the user can identify which browser belongs to which instance.
+    await markBrowserWithInstanceId(browserContext, instanceId);
 
     const browserTypeLabel = connectedBrowserType || 'Chromium';
     return textResult(

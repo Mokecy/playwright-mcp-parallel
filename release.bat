@@ -30,6 +30,24 @@ if errorlevel 1 (
     )
 )
 
+REM 同步 parallel.js：从 packages 复制到根目录（确保发布版本一致）
+echo [0/3] 同步 parallel.js...
+copy /Y "packages\playwright-mcp\parallel.js" "parallel.js" >nul
+if errorlevel 1 (
+    echo [ERROR] 同步 parallel.js 失败
+    exit /b 1
+)
+REM 修正 packageJSON 引用路径（packages 版本引用 ./package.json，根目录也是 ./package.json，无需修改）
+
+REM 检查同步后是否有新的变更需要提交
+git diff --quiet 2>nul
+if errorlevel 1 (
+    echo [!] parallel.js 已同步，提交变更...
+    git add parallel.js
+    git commit -m "sync: parallel.js from packages/playwright-mcp"
+)
+echo       parallel.js 同步完成
+
 REM 升版本号
 echo [1/3] 升级版本号 (%VERSION_TYPE%)...
 call npm version %VERSION_TYPE% --no-git-tag-version
