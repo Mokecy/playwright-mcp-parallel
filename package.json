@@ -1,6 +1,6 @@
 {
   "name": "playwright-mcp-parallel",
-  "version": "0.0.76",
+  "version": "0.0.77",
   "description": "Playwright MCP with parallel multi-instance browser support. Drop-in enhancement over @playwright/mcp.",
   "repository": {
     "type": "git",
