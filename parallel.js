@@ -23,6 +23,9 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
+// Download directory for captured downloads
+const DOWNLOAD_DIR = path.join(os.tmpdir(), 'playwright-mcp-downloads');
+
 /**
  * Create a parallel MCP connection that supports multiple isolated browser instances.
  * 
@@ -378,6 +381,107 @@ function createParallelConnection(config) {
     }
   });
 
+  // ── Download handler: capture downloads to prevent CDP disconnection ──
+
+  /**
+   * Set up download event handlers on a browserContext.
+   * This prevents file downloads from navigating the page and breaking CDP connection.
+   * Downloads are saved to a temp directory.
+   */
+  function setupDownloadHandler(browserContext, instanceId) {
+    const downloadDir = path.join(DOWNLOAD_DIR, instanceId);
+
+    const handleDownload = async (download) => {
+      try {
+        await fs.promises.mkdir(downloadDir, { recursive: true });
+        const suggestedFilename = download.suggestedFilename();
+        const savePath = path.join(downloadDir, suggestedFilename);
+        await download.saveAs(savePath);
+        console.error(`[playwright-mcp-parallel] [${instanceId}] Download saved: ${savePath}`);
+      } catch (e) {
+        // Ignore canceled downloads
+        if (!e.message?.includes('canceled') && !e.message?.includes('Download deleted')) {
+          console.error(`[playwright-mcp-parallel] [${instanceId}] Download error: ${e.message}`);
+        }
+      }
+    };
+
+    // Add listener to all existing pages
+    for (const page of browserContext.pages()) {
+      page.on('download', handleDownload);
+    }
+
+    // Add listener to future pages
+    browserContext.on('page', (page) => {
+      page.on('download', handleDownload);
+    });
+  }
+
+  // ── Connection watchdog: auto-reconnect if CDP connection is lost ──
+
+  let reconnectAttempts = 0;
+  const MAX_RECONNECT_ATTEMPTS = 3;
+  let watchdogInterval = null;
+
+  /**
+   * Start a watchdog that monitors CDP connection health and attempts reconnection.
+   */
+  function startConnectionWatchdog() {
+    if (watchdogInterval) return; // Already running
+
+    watchdogInterval = setInterval(async () => {
+      if (!connectedBrowser || !connectedCdpUrl) return;
+
+      try {
+        // Simple liveness check
+        connectedBrowser.contexts();
+        reconnectAttempts = 0; // Reset on success
+      } catch (e) {
+        console.error(`[playwright-mcp-parallel] CDP connection lost, attempting reconnect (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})...`);
+        
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+          console.error(`[playwright-mcp-parallel] Max reconnect attempts reached. Call browser_connect manually.`);
+          stopConnectionWatchdog();
+          connectedBrowser = null;
+          return;
+        }
+
+        reconnectAttempts++;
+
+        try {
+          const browser = await playwright.chromium.connectOverCDP(connectedCdpUrl, { timeout: 5000 });
+          connectedBrowser = browser;
+          console.error(`[playwright-mcp-parallel] Reconnected to ${connectedBrowserType || 'browser'} at ${connectedCdpUrl}`);
+
+          // Update browser reference for all CDP-mode instances
+          for (const [id, entry] of instances) {
+            if (entry.mode === 'cdp') {
+              entry.browser = browser;
+              // Re-setup download handlers for the new connection
+              try {
+                const contexts = browser.contexts();
+                for (const ctx of contexts) {
+                  setupDownloadHandler(ctx, id);
+                }
+              } catch { /* ignore */ }
+            }
+          }
+
+          reconnectAttempts = 0;
+        } catch (reconnectErr) {
+          console.error(`[playwright-mcp-parallel] Reconnect failed: ${reconnectErr.message}`);
+        }
+      }
+    }, 3000); // Check every 3 seconds
+  }
+
+  function stopConnectionWatchdog() {
+    if (watchdogInterval) {
+      clearInterval(watchdogInterval);
+      watchdogInterval = null;
+    }
+  }
+
   // ── Instance badge: visually mark browser windows with instanceId ──
 
   /**
@@ -602,6 +706,10 @@ function createParallelConnection(config) {
         };
 
         const httpOnlyCount = cookies.filter(c => c.httpOnly).length;
+        
+        // Start connection watchdog for auto-reconnect
+        startConnectionWatchdog();
+        
         return textResult(
           `✅ Connected to ${browserType} at ${cdpUrl}.\n` +
           `Extracted ${cookies.length} cookies (${httpOnlyCount} httpOnly).\n` +
@@ -759,6 +867,10 @@ function createParallelConnection(config) {
 
     instances.set(instanceId, { backend, browser, browserContext, mode });
 
+    // ── Setup download handler to prevent CDP disconnection ──
+    // Captures downloads and saves them to temp directory instead of navigating the page
+    setupDownloadHandler(browserContext, instanceId);
+
     // Navigate if URL provided
     if (url) {
       await backend.callTool('browser_navigate', { url });
@@ -879,6 +991,7 @@ function createParallelConnection(config) {
 
   // ── Cleanup ──
   process.on('SIGINT', async () => {
+    stopConnectionWatchdog();
     await handleInstanceCloseAll();
     if (connectedBrowser) connectedBrowser.close().catch(() => {});
     process.exit(0);
