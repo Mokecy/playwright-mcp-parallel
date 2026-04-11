@@ -486,6 +486,7 @@ function createParallelConnection(config) {
 
   /**
    * Inject a persistent visual badge showing the instanceId into every page.
+   * Badge is positioned at bottom-right and is draggable.
    * Also sets up a listener so future navigations re-inject the badge.
    */
   async function markBrowserWithInstanceId(browserContext, instanceId) {
@@ -495,13 +496,43 @@ function createParallelConnection(config) {
         const badge = document.createElement('div');
         badge.id = '__mcp_instance_badge__';
         badge.textContent = '🤖 ' + ${JSON.stringify(id)};
-        badge.style.cssText = 'position:fixed;top:4px;right:4px;z-index:2147483647;' +
+        badge.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;' +
           'background:linear-gradient(135deg,#1a1a2e,#16213e);color:#00d4ff;' +
           'font:bold 12px/1 "Consolas","Monaco","Courier New",monospace;' +
           'padding:5px 10px;border-radius:6px;border:1px solid #00d4ff40;' +
-          'box-shadow:0 2px 8px rgba(0,212,255,0.2);pointer-events:none;' +
-          'opacity:0.85;user-select:none;white-space:nowrap;';
+          'box-shadow:0 2px 8px rgba(0,212,255,0.2);' +
+          'opacity:0.85;user-select:none;white-space:nowrap;cursor:move;';
         (document.body || document.documentElement).appendChild(badge);
+
+        // ── Draggable logic ──
+        let isDragging = false;
+        let offsetX = 0, offsetY = 0;
+
+        badge.addEventListener('mousedown', (e) => {
+          isDragging = true;
+          offsetX = e.clientX - badge.getBoundingClientRect().left;
+          offsetY = e.clientY - badge.getBoundingClientRect().top;
+          badge.style.opacity = '1';
+          e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!isDragging) return;
+          const x = e.clientX - offsetX;
+          const y = e.clientY - offsetY;
+          // Switch from bottom/right to top/left positioning for free movement
+          badge.style.left = x + 'px';
+          badge.style.top = y + 'px';
+          badge.style.right = 'auto';
+          badge.style.bottom = 'auto';
+        });
+
+        document.addEventListener('mouseup', () => {
+          if (isDragging) {
+            isDragging = false;
+            badge.style.opacity = '0.85';
+          }
+        });
       })();
     `;
 
