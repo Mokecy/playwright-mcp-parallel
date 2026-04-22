@@ -45,6 +45,7 @@ function parseArgs() {
       case '--caps': options.caps = args[++i]?.split(','); break;
       case '--allowed-origins': options.allowedOrigins = args[++i]?.split(';'); break;
       case '--blocked-origins': options.blockedOrigins = args[++i]?.split(';'); break;
+      case '--allow-unrestricted-file-access': options.allowUnrestrictedFileAccess = true; break;
       case '--help': case '-h':
         console.error(`
 Playwright MCP Parallel v${packageJSON.version}
@@ -62,6 +63,11 @@ Options:
   --output-dir <path>       Path for screenshots and output files
   --allowed-origins <list>  Semicolon-separated allowed origins
   --blocked-origins <list>  Semicolon-separated blocked origins
+  --allow-unrestricted-file-access
+                            Allow file uploads from anywhere on the file system
+                            (default: only paths under cwd or output dir).
+                            Can also be enabled via env
+                            PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS=1.
   --help                    Show this help
 
 Parallel tools:
@@ -87,6 +93,11 @@ function buildConfig(options) {
   else if (b === 'chromium') browserName = 'chromium';
   else if (b) { browserName = 'chromium'; channel = b; }
 
+  // Honor env var as a default; CLI flag overrides
+  const envUnrestricted = ['1', 'true', 'yes'].includes(
+    String(process.env.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS || '').toLowerCase()
+  );
+
   const config = {
     browser: {
       browserName,
@@ -98,6 +109,7 @@ function buildConfig(options) {
     },
     capabilities: options.caps || [],
     outputDir: options.outputDir,
+    allowUnrestrictedFileAccess: options.allowUnrestrictedFileAccess === true || envUnrestricted,
   };
 
   if (channel) config.browser.launchOptions.channel = channel;

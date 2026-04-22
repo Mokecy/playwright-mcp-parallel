@@ -37,6 +37,11 @@ Options:
   --output-dir <path>       Output directory for screenshots etc.
   --allowed-origins <list>  Semicolon-separated allowed origins
   --blocked-origins <list>  Semicolon-separated blocked origins
+  --allow-unrestricted-file-access
+                            Allow file uploads from anywhere on the file system.
+                            By default only paths under cwd or output dir are allowed.
+                            Can also be enabled via env
+                            PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS=1
   --help                    Show this help
 
 Tools:
@@ -61,6 +66,13 @@ else if (b === 'webkit') browserName = 'webkit';
 else if (b === 'chrome' || b === 'msedge') { browserName = 'chromium'; channel = b; }
 else if (b) { browserName = 'chromium'; channel = b; }
 
+// Allow file uploads from anywhere on the filesystem.
+// Either CLI flag or env var (PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS=1) enables it.
+const envUnrestricted = ['1', 'true', 'yes'].includes(
+  String(process.env.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS || '').toLowerCase()
+);
+const allowUnrestrictedFileAccess = hasFlag('--allow-unrestricted-file-access') || envUnrestricted;
+
 const config = {
   browser: {
     browserName,
@@ -74,6 +86,7 @@ const config = {
   capabilities: getArg('--caps')?.split(',') || [],
   outputDir: getArg('--output-dir'),
   network: {},
+  allowUnrestrictedFileAccess,
 };
 
 const userDataDir = getArg('--user-data-dir');

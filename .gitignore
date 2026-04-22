@@ -8,3 +8,6 @@ playwright-report/
 sessions/
 dist/
 release.bat
+
+# 个人心得文档，不上仓
+AI驱动UI测试上下文优化方案.md
